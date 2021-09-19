@@ -1,24 +1,33 @@
+using System.Linq;
+using DefaultNamespace;
 using UnityEngine;
 using Random = UnityEngine.Random;
 // ReSharper disable InconsistentNaming
 
 public class TrisLib
 {
-    public struct Tris
+    public class Tris
     {
         public Vector3 p1;
         public Vector3 p2;
         public Vector3 p3;
-        public float W => Vector3.Cross(p2 - p1, p3 - p1).magnitude * .5f;
-        public Vector3 N => Vector3.Cross(p2 - p1, p3 - p1).normalized;
+        public readonly float W;
+        public readonly Vector3 N;
 
         public Tris(Vector3 p1, Vector3 p2, Vector3 p3) {
             this.p1 = p1;
             this.p2 = p2;
             this.p3 = p3;
+            W = Vector3.Cross(p2 - p1, p3 - p1).magnitude * .5f;
+            N = Vector3.Cross(p2 - p1, p3 - p1).normalized;
         }
     }
-    
+
+    public static Tris[] GetTris(Mesh mesh) => mesh.triangles
+        .Split(3)
+        .Select(t => new Tris(mesh.vertices[t[0]], mesh.vertices[t[1]], mesh.vertices[t[2]]))
+        .ToArray();
+
     public static Vector3 RandomPoint(Tris tris) {
         var a = tris.p2 - tris.p1;
         var b = tris.p3 - tris.p1;

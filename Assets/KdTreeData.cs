@@ -3,6 +3,28 @@ using System.Collections.Generic;
 
 public class KdTreeData
 {
+    public class BvhTris: TrisLib.Tris
+    {
+        public readonly Vector3 centroid;
+
+        public float radius;
+
+        public bool toClear = true;
+
+        public bool toCheck;
+
+        public BvhTris(Vector3 p1, Vector3 p2, Vector3 p3): base(p1, p2, p3) {
+            centroid = (p1 + p2 + p3) / 3f;
+
+            radius = Mathf.Max(
+                Vector3.Distance(p1, centroid), 
+                Vector3.Distance(p2, centroid), 
+                Vector3.Distance(p3, centroid)
+            ) + float.Epsilon + 0.00000001f;
+
+        }
+    }
+    
     public class Node
     {
         public float partitionCoordinate;
@@ -18,7 +40,6 @@ public class KdTreeData
         public Vector3 tempClosestPoint;
     };
 
-    private int _triangleCount;
     private int _vertexCount;
     private readonly Vector3[] _vertices;
 
@@ -38,6 +59,7 @@ public class KdTreeData
 
     public KdTreeData(Mesh mesh)
     {
+        _triangles = TrisLib.GetTris(mesh);
         _tris = mesh.triangles;
         _vertices = mesh.vertices;
     }
@@ -45,13 +67,11 @@ public class KdTreeData
     public void Build()
     {
         _vertexCount = _vertices.Length;
-        _triangleCount = _tris.Length / 3;
+        _triangleCentroid = new Vector3 [_triangles.Length];
+        _triangleRadius = new float [_triangles.Length];
 
-        _triangleCentroid = new Vector3 [_triangleCount];
-        _triangleRadius = new float [_triangleCount];
-
-        _needToCheck = new bool [_triangleCount];
-        _triangleToClear = new int [_triangleCount];
+        _needToCheck = new bool [_triangles.Length];
+        _triangleToClear = new int [_triangles.Length];
 
         for (var i = 0; i < _tris.Length; i += 3)
         {
@@ -66,12 +86,7 @@ public class KdTreeData
             var mean = (a + b + c) / 3f;
             _triangleCentroid[i / 3] = mean;
 
-            _triangleRadius[i / 3] =
-                Mathf.Max(
-                    Vector3.Distance(a, mean),
-                    Vector3.Distance(b, mean),
-                    Vector3.Distance(c, mean)
-                ) + float.Epsilon + 0.00000001f;
+            _triangleRadius[i / 3] = Mathf.Max(Vector3.Distance(a, mean), Vector3.Distance(b, mean), Vector3.Distance(c, mean)) + float.Epsilon + 0.00000001f;
 
             _needToCheck[i / 3] = true;
         }
@@ -304,10 +319,7 @@ public class KdTreeData
     {
         var rootTriangles = new List<int>();
 
-        for (var i = 0; i < _tris.Length; i += 3)
-        {
-            rootTriangles.Add(i);
-        }
+        for (var i = 0; i < _tris.Length; i += 3) rootTriangles.Add(i);
 
         rootNode = new Node
         {

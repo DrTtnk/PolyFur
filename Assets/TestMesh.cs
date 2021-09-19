@@ -10,14 +10,6 @@ public class TestMesh : MonoBehaviour
     public GameObject strands;
     [SerializeField] private int strandSegments;
 
-    private static Tris[] GetTris(Mesh mesh, Transform transform) {
-        var worldPos = mesh.vertices.Select(transform.TransformPoint).ToArray();
-
-        return mesh.triangles
-            .Split(3)
-            .Select(t => new Tris(worldPos[t[0]], worldPos[t[1]], worldPos[t[2]]))
-            .ToArray();
-    }
 
     private static Vector3[] GenerateChildren(Tris[] tris) {
         var partialSum = NormalizedPartialSum(tris);
@@ -43,7 +35,7 @@ public class TestMesh : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        var tris = GetTris(GetComponent<MeshFilter>().sharedMesh, transform);
+        var tris = GetTris(GetComponent<MeshFilter>().sharedMesh);
 
         var points = GenerateChildren(tris);
         
