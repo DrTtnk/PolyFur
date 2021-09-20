@@ -1,8 +1,22 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 public class KdTreeData
 {
+    public class BBox {
+        public Vector3 min;
+        public Vector3 max;
+        public Vector3 Center => .5f * (max + min);
+
+        public BBox() { }
+
+        public BBox(Vector3 p1, Vector3 p2, Vector3 p3) {
+            min = Vector3.Min(p1, Vector3.Min(p2, p3));
+            max = Vector3.Max(p1, Vector3.Max(p2, p3));
+        }
+    }
+    
     public class BvhTris: TrisLib.Tris
     {
         public readonly Vector3 centroid;
@@ -13,7 +27,7 @@ public class KdTreeData
 
         public bool toCheck;
 
-        public BvhTris(Vector3 p1, Vector3 p2, Vector3 p3): base(p1, p2, p3) {
+        public BvhTris(TrisLib.Tris tris): base(tris.p1, tris.p2, tris.p3) {
             centroid = (p1 + p2 + p3) / 3f;
 
             radius = Mathf.Max(
@@ -21,7 +35,6 @@ public class KdTreeData
                 Vector3.Distance(p2, centroid), 
                 Vector3.Distance(p3, centroid)
             ) + float.Epsilon + 0.00000001f;
-
         }
     }
     
@@ -42,10 +55,10 @@ public class KdTreeData
 
     private int _vertexCount;
     private readonly Vector3[] _vertices;
-
-    private readonly TrisLib.Tris[] _triangles;
-
     private readonly int[] _tris;
+
+    private readonly BvhTris[] _triangles;
+
 
     private Vector3[] _triangleCentroid;
 
@@ -59,14 +72,14 @@ public class KdTreeData
 
     public KdTreeData(Mesh mesh)
     {
-        _triangles = TrisLib.GetTris(mesh);
+        _triangles = TrisLib.GetTris(mesh).Select(t => new BvhTris(t)).ToArray();
         _tris = mesh.triangles;
         _vertices = mesh.vertices;
     }
 
     public void Build()
     {
-        _vertexCount = _vertices.Length;
+        _vertexCount = _triangles.Length * 3; 
         _triangleCentroid = new Vector3 [_triangles.Length];
         _triangleRadius = new float [_triangles.Length];
 
@@ -324,32 +337,20 @@ public class KdTreeData
         rootNode = new Node
         {
             partitionAxis = -1,
-            bounds = MakeBounds(rootTriangles)
+            bounds = MakeBounds(_triangles)
         };
 
 
         RecursivePartition(rootTriangles, 0, rootNode, -1);
     }
 
-    private Bounds MakeBounds(List<int> triangles)
+    private static Bounds MakeBounds(IEnumerable<TrisLib.Tris> tris)
     {
-        var maxExtents = new Vector3(-float.MaxValue, -float.MaxValue, -float.MaxValue);
-        var minExtents = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
-
-        triangles.ForEach((triangle) =>
-        {
-            // partitionMeanPoint += centroids[triangle/3];
-
-            minExtents.x = Mathf.Min(minExtents.x, Mathf.Min(_vertices[_tris[triangle]].x, Mathf.Min(_vertices[_tris[triangle + 1]].x, Mathf.Min(_vertices[_tris[triangle + 2]].x))));
-            minExtents.y = Mathf.Min(minExtents.y, Mathf.Min(_vertices[_tris[triangle]].y, Mathf.Min(_vertices[_tris[triangle + 1]].y, Mathf.Min(_vertices[_tris[triangle + 2]].y))));
-            minExtents.z = Mathf.Min(minExtents.z, Mathf.Min(_vertices[_tris[triangle]].z, Mathf.Min(_vertices[_tris[triangle + 1]].z, Mathf.Min(_vertices[_tris[triangle + 2]].z))));
-
-            maxExtents.x = Mathf.Max(maxExtents.x, Mathf.Max(_vertices[_tris[triangle]].x, Mathf.Max(_vertices[_tris[triangle + 1]].x, Mathf.Max(_vertices[_tris[triangle + 2]].x))));
-            maxExtents.y = Mathf.Max(maxExtents.y, Mathf.Max(_vertices[_tris[triangle]].y, Mathf.Max(_vertices[_tris[triangle + 1]].y, Mathf.Max(_vertices[_tris[triangle + 2]].y))));
-            maxExtents.z = Mathf.Max(maxExtents.z, Mathf.Max(_vertices[_tris[triangle]].z, Mathf.Max(_vertices[_tris[triangle + 1]].z, Mathf.Max(_vertices[_tris[triangle + 2]].z))));
-        });
-
-        return new Bounds { min = minExtents, max = maxExtents };
+        var boxes = tris.Select(t => new BBox(t.p1, t.p2, t.p3)).ToArray();
+        return new Bounds {
+            min = boxes.Select(b => b.min).Aggregate(Vector3.Min),
+            max = boxes.Select(b => b.max).Aggregate(Vector3.Max)
+        };
     }
 
     private readonly Stack<List<int>> _listPool = new Stack<List<int>>();
@@ -361,7 +362,6 @@ public class KdTreeData
         var l = _listPool.Pop();
         l.Clear();
         return l;
-
     }
 
     private void ReturnList(List<int> list) => _listPool.Push(list);
@@ -381,18 +381,10 @@ public class KdTreeData
         var maxSize = parentBoundsSize.x;
 
         //is Y axis bigger?
-        if (maxSize < parentBoundsSize.y)
-        {
-            partitionAxis = 1;
-            maxSize = parentBoundsSize.y;
-        }
-
+        if (maxSize < parentBoundsSize.y) { partitionAxis = 1; maxSize = parentBoundsSize.y; }
+        
         //is Z axis biggeR?
-        if (maxSize < parentBoundsSize.z)
-        {
-            partitionAxis = 2;
-            maxSize = parentBoundsSize.z;
-        }
+        if (maxSize < parentBoundsSize.z) { partitionAxis = 2; maxSize = parentBoundsSize.z; }
 
         //area that doesn't change when re-positioning splitting plane
         var sideArea = 2 * parentBoundsSize[(partitionAxis + 1) % 3] * parentBoundsSize[(partitionAxis + 2) % 3];
@@ -404,7 +396,7 @@ public class KdTreeData
         var endPos = parentBounds.max[partitionAxis];
 
         float minPosition = 0;
-        var minHeuristic = System.Single.MaxValue;
+        var minHeuristic = float.MaxValue;
 
         var areas = Mathf.Max(triangles.Count / 20, 5);
 
@@ -429,19 +421,11 @@ public class KdTreeData
         // making partition, bisection
         // maximum 12 iterations!
         // works OK
-        var k = 8;
+        var k = 10;
         while (k > 0)
         {
-            // desna razlika
-            var rightH = Heuristic(triangles, minPosition + step, startPos, endPos, partitionAxis, axisArea,
-                sideArea);
-
-            // leva razlika 
-            var leftH = Heuristic(triangles, minPosition - step, startPos, endPos, partitionAxis, axisArea,
-                sideArea);
-
-            // Count(triangles, partitionCoordinate, partitionAxis, out posCount, out negCount);
-            // int trianglesInBoth = triangles.Count - posCount + negCount;
+            var rightH = Heuristic(triangles, minPosition + step, startPos, endPos, partitionAxis, axisArea, sideArea);
+            var leftH  = Heuristic(triangles, minPosition - step, startPos, endPos, partitionAxis, axisArea, sideArea);
 
             //moving right is positive, it makes heuristic smaller
             if (rightH < minHeuristic && rightH < leftH)
@@ -466,43 +450,25 @@ public class KdTreeData
 
         partitionCoordinate = minPosition;
 
-        //partitionMeanPoint[partitionAxis] = partitionCoordinate;
-        // DebugDraw.DrawMarker(transform.TransformPoint(partitionMeanPoint), 1f, Color.red, 10f, false);
-
         var positiveTriangles = GetList();
         var negativeTriangles = GetList();
 
-        Split(triangles, partitionCoordinate, partitionAxis, positiveTriangles, negativeTriangles);
-
+        var (positives, negatives) = Split(triangles, partitionCoordinate, partitionAxis);
+        positiveTriangles.AddRange(positives);
+        negativeTriangles.AddRange(negatives);
+        
         ReturnList(triangles);
 
         parent.partitionAxis = partitionAxis;
         parent.partitionCoordinate = partitionCoordinate;
 
-        //Vector3 planeNormal = Vector3.zero;
-
-        //planeNormal[partitionAxis] = 1;
-
-        //DebugDraw.DrawPlane(transform.TransformPoint(partitionMeanPoint), planeNormal, extentsMagnitude[partitionAxis]/2f, Color.Lerp(Color.red, Color.blue, (float)depth / 10f), 10 - depth, false);
-
         // POSITIVE NODE
         var posMin = parent.bounds.min;
         posMin[partitionAxis] = partitionCoordinate;
 
-        var posNode = new Node
-        {
-            bounds = parentBounds
-        };
+        var posNode = new Node { bounds = parentBounds };
         posNode.bounds.min = posMin;
         parent.positiveChild = posNode;
-
-
-        /*
-#if DEBUG_KD
-        Color c = Color.Lerp(Color.red, Color.blue, (float)depth / 10f);
-        c[partitionAxis] = 1f;
-        DebugDraw.DrawBounds(parent.positiveChild.bounds, c, 10f - depth, transform);
-#endif*/
 
         // NEGATIVE NODE
         var negMax = parent.bounds.max;
@@ -515,8 +481,6 @@ public class KdTreeData
         negNode.bounds.max = negMax;
         parent.negativeChild = negNode;
 
-        // DebugDraw.DrawBounds(parent.negativeChild.bounds, c, 10f - depth, transform);
-
         if (positiveTriangles.Count < triCount && positiveTriangles.Count >= 5)
         {
             RecursivePartition(positiveTriangles, depth + 1, posNode, partitionAxis);
@@ -526,11 +490,7 @@ public class KdTreeData
             posNode.triangles = positiveTriangles.ToArray();
 
             ReturnList(positiveTriangles);
-
-            /*if (drawMeshTreeOnStart)
-                DrawTriangleSet(posNode.triangles, DebugDraw.RandomColor(), depth);*/
         }
-
 
         if (negativeTriangles.Count < triCount && negativeTriangles.Count >= 5)
         {
@@ -539,78 +499,43 @@ public class KdTreeData
         else
         {
             negNode.triangles = negativeTriangles.ToArray();
-
             ReturnList(negativeTriangles);
-
-            /*if (drawMeshTreeOnStart)
-                DrawTriangleSet(negNode.triangles, DebugDraw.RandomColor(), depth);*/
         }
     }
 
-    private void Split(List<int> triangles, float partitionCoordinate, int partitionAxis, List<int> positiveTriangles, List<int> negativeTriangles)
-    {
-        foreach (var triangle in triangles)
-        {
-            var firstPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle]]);
-            var secondPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle + 1]]);
-            var thirdPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle + 2]]);
+    private (List<int> positives, List<int> negatives) Split(List<int> triangles, float partitionCoordinate, int partitionAxis) {
+        var positions = triangles.Select(t => (
+            above1: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 0]]),
+            above2: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 1]]),
+            above3: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 2]]),
+            tris: t
+        )).ToArray();
+        
+        var neither = positions.Where(p => !(p.above1 && p.above2 && p.above3 || !p.above1 && !p.above2 && !p.above3)).ToList();
+        var positives = positions.Where(p => p.above1 && p.above2 && p.above3).ToList();
+        var negatives = positions.Where(p => !p.above1 && !p.above2 && !p.above3).ToList();
 
-            if (firstPointAbove && secondPointAbove && thirdPointAbove)
-            {
-                positiveTriangles.Add(triangle);
-            }
-            else if (!firstPointAbove && !secondPointAbove && !thirdPointAbove)
-            {
-                negativeTriangles.Add(triangle);
-            }
-            else
-            {
-                positiveTriangles.Add(triangle);
-                negativeTriangles.Add(triangle);
-            }
-        }
+        return (
+            positives: positives.Concat(neither).Select(p => p.tris).ToList(),
+            negatives: negatives.Concat(neither).Select(p => p.tris).ToList()
+        );
     }
 
     //SAH HEURISTICS
-    private float Heuristic(List<int> triangles, float partitionCoordinate, float partitionStart, float partitionEnd,
-        int partitionAxis, float axisArea, float sideArea)
+    private float Heuristic(List<int> triangles, float partitionCoordinate, float partitionStart, float partitionEnd, int partitionAxis, float axisArea, float sideArea)
     {
-        var positiveCount = 0;
-        var negativeCount = 0;
-
-        for (var i = 0; i < triangles.Count; i++)
-        {
-            var triangle = triangles[i];
-
-            var firstPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle + 0]]);
-            var secondPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle + 1]]);
-            var thirdPointAbove = PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[triangle + 2]]);
-
-            if (firstPointAbove && secondPointAbove && thirdPointAbove)
-            {
-                positiveCount += 1;
-            }
-            else if (!firstPointAbove && !secondPointAbove && !thirdPointAbove)
-            {
-                negativeCount += 1;
-            }
-            else
-            {
-                //positiveCount += 1;
-                //negativeCount += 1;
-
-                //positiveArea += areas[triangle / 3];
-                //negativeArea += areas[triangle / 3];
-            }
-        }
+        var positions = triangles.Select(t => (
+            firstAbove: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 0]]),
+            secondAbove: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 1]]),
+            thirdAbove: PointAbovePlane(partitionCoordinate, partitionAxis, _vertices[_tris[t + 2]])
+        )).ToArray();
+        
+        var positiveCount = positions.Count(p => p.firstAbove && p.secondAbove && p.thirdAbove);
+        var negativeCount = positions.Count(p => !p.firstAbove && !p.secondAbove && !p.thirdAbove);
 
         var ratioLeft = (partitionCoordinate - partitionStart) / (partitionEnd - partitionStart);
 
-        return positiveCount * (sideArea + axisArea * (1f - ratioLeft))
-               + negativeCount * (sideArea + axisArea * ratioLeft);
-
-        /*return positiveCount * Mathf.Sqrt((1f - ratioLeft))
-             + negativeCount * Mathf.Sqrt((ratioLeft));*/
+        return positiveCount * (sideArea + axisArea * (1f - ratioLeft)) + negativeCount * (sideArea + axisArea * ratioLeft);
     }
 
     private bool PointAbovePlane(Vector3 planeOrigin, Vector3 planeNormal, Vector3 point)
@@ -618,10 +543,7 @@ public class KdTreeData
         return Vector3.Dot(point - planeOrigin, planeNormal) >= 0;
     }
 
-    private bool PointAbovePlane(float planeCoordinate, int planeAxis, Vector3 point)
-    {
-        return point[planeAxis] - planeCoordinate >= 0;
-    }
+    private static bool PointAbovePlane(float planeCoordinate, int planeAxis, Vector3 point) => point[planeAxis] - planeCoordinate >= 0;
 
     private float PointDistanceFromPlane(Vector3 planeOrigin, Vector3 planeNormal, Vector3 point)
     {
@@ -636,47 +558,12 @@ public class KdTreeData
         return Mathf.Abs(point[planeAxis] - planeCoordinate);
     }
 
-    /*float PointDistanceFromPlaneNoAbs(Vector3 planeOrigin, Vector3 planeNormal, Vector3 point)
-    {
-        return Vector3.Dot(point - planeOrigin, planeNormal);
-    }*/
-
     private float PointDistanceFromPlaneNoAbs(float planeCoordinate, int planeAxis, Vector3 point)
     {
         return point[planeAxis] - planeCoordinate;
     }
 
-    /// <summary>
-    /// Determines the closest point between a point and a triangle.
-    /// Borrowed from RPGMesh class of the RPGController package for Unity, by fholm
-    /// The code in this method is copyrighted by the SlimDX Group under the MIT license:
-    /// 
-    /// Copyright (c) 2007-2010 SlimDX Group
-    /// 
-    /// Permission is hereby granted, free of charge, to any person obtaining a copy
-    /// of this software and associated documentation files (the "Software"), to deal
-    /// in the Software without restriction, including without limitation the rights
-    /// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    /// copies of the Software, and to permit persons to whom the Software is
-    /// furnished to do so, subject to the following conditions:
-    /// 
-    /// The above copyright notice and this permission notice shall be included in
-    /// all copies or substantial portions of the Software.
-    /// 
-    /// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    /// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    /// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    /// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    /// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    /// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-    /// THE SOFTWARE.
-    /// 
-    /// </summary>
-    /// <param name="point">The point to test.</param>
-    /// <param name="vertex1">The first vertex to test.</param>
-    /// <param name="vertex2">The second vertex to test.</param>
-    /// <param name="vertex3">The third vertex to test.</param>
-    /// <param name="result">When the method completes, contains the closest point between the two objects.</param>
+    // Determines the closest point between a point and a triangle.
     private void ClosestPointOnTriangleToPoint(ref Vector3 vertex1, ref Vector3 vertex2, ref Vector3 vertex3, ref Vector3 point, out Vector3 result)
     {
         //Source: Real-Time Collision Detection by Christer Ericson
