@@ -187,9 +187,7 @@ public class KdTreeData
                 {
                     checkCount++;
 
-                    var newClosestTriangle = t;
-
-                    var dividedIndex = newClosestTriangle / 3;
+                    var dividedIndex = t / 3;
 
                     if (_needToCheck[dividedIndex])
                     {
@@ -201,14 +199,14 @@ public class KdTreeData
                         continue; //already checked, move along
 
                     // approx test
-                    if (MinDistanceToTriangleApprox(newClosestTriangle, to) <= currentMin)
+                    if (MinDistanceToTriangleApprox(t, to) <= currentMin)
                     {
                         // actual test
-                        var newMin = ClosestDistanceOnTriangleSingle(newClosestTriangle, to);
+                        var newMin = ClosestDistanceOnTriangleSingle(t, to);
                         if (newMin <= currentMin)
                         {
                             currentMin = newMin;
-                            currClosestTriangle = newClosestTriangle;
+                            currClosestTriangle = t;
                         }
                     }
                 }
@@ -226,14 +224,11 @@ public class KdTreeData
             return false;
         }
 
-        var closest = Vector3.zero;
-
-        ClosestPointOnTriangleToPoint(
+        var closest = ClosestPointOnTriangleToPoint(
             ref _vertices[_tris[currClosestTriangle]],
             ref _vertices[_tris[currClosestTriangle + 1]],
             ref _vertices[_tris[currClosestTriangle + 2]],
-            ref to,
-            out closest);
+            ref to);
 
         closestPoint = transform.TransformPoint(closest);
 
@@ -253,7 +248,7 @@ public class KdTreeData
         _p2 = _vertices[_tris[triangle + 1]];
         _p3 = _vertices[_tris[triangle + 2]];
 
-        ClosestPointOnTriangleToPoint(ref _p1, ref _p2, ref _p3, ref to, out _nearest);
+        _nearest = ClosestPointOnTriangleToPoint(ref _p1, ref _p2, ref _p3, ref to);
 
         return Vector3.Magnitude(to - _nearest);
     }
@@ -359,10 +354,7 @@ public class KdTreeData
 
         step /= 2f;
 
-        // making partition, bisection
-        // maximum 12 iterations!
-        // works OK
-        for (var k = 0; k <10; k++)
+        for (var k = 0; k <20; k++)
         {
             var rightH = Heuristic(triangles, minPosition + step, startPos, endPos, partitionAxis, axisArea, sideArea);
             var leftH  = Heuristic(triangles, minPosition - step, startPos, endPos, partitionAxis, axisArea, sideArea);
@@ -477,7 +469,7 @@ public class KdTreeData
     }
 
     // Determines the closest point between a point and a triangle.
-    private void ClosestPointOnTriangleToPoint(ref Vector3 vertex1, ref Vector3 vertex2, ref Vector3 vertex3, ref Vector3 point, out Vector3 result)
+    private static Vector3 ClosestPointOnTriangleToPoint(ref Vector3 vertex1, ref Vector3 vertex2, ref Vector3 vertex3, ref Vector3 point)
     {
         //Source: Real-Time Collision Detection by Christer Ericson
         //Reference: Page 136
@@ -490,63 +482,39 @@ public class KdTreeData
         var d1 = Vector3.Dot(ab, ap);
         var d2 = Vector3.Dot(ac, ap);
         if (d1 <= 0.0f && d2 <= 0.0f)
-        {
-            result = vertex1; //Barycentric coordinates (1,0,0)
-            return;
-        }
+            return vertex1; //Barycentric coordinates (1,0,0)
 
         //Check if P in vertex region outside B
         var bp = point - vertex2;
         var d3 = Vector3.Dot(ab, bp);
         var d4 = Vector3.Dot(ac, bp);
         if (d3 >= 0.0f && d4 <= d3)
-        {
-            result = vertex2; // barycentric coordinates (0,1,0)
-            return;
-        }
+            return vertex2; // barycentric coordinates (0,1,0)
 
         //Check if P in edge region of AB, if so return projection of P onto AB
         var vc = d1 * d4 - d3 * d2;
         if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
-        {
-            var v = d1 / (d1 - d3);
-            result = vertex1 + v * ab; //Barycentric coordinates (1-v,v,0)
-            return;
-        }
+            return vertex1 + d1 / (d1 - d3) * ab; //Barycentric coordinates (1-v,v,0)
 
         //Check if P in vertex region outside C
         var cp = point - vertex3;
         var d5 = Vector3.Dot(ab, cp);
         var d6 = Vector3.Dot(ac, cp);
         if (d6 >= 0.0f && d5 <= d6)
-        {
-            result = vertex3; //Barycentric coordinates (0,0,1)
-            return;
-        }
+            return vertex3; //Barycentric coordinates (0,0,1)
 
         //Check if P in edge region of AC, if so return projection of P onto AC
         var vb = d5 * d2 - d1 * d6;
         if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
-        {
-            var w = d2 / (d2 - d6);
-            result = vertex1 + w * ac; //Barycentric coordinates (1-w,0,w)
-            return;
-        }
+            return vertex1 + d2 / (d2 - d6) * ac; //Barycentric coordinates (1-w,0,w)
 
         //Check if P in edge region of BC, if so return projection of P onto BC
         var va = d3 * d6 - d5 * d4;
         if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f)
-        {
-            var w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-            result = vertex2 + w * (vertex3 - vertex2); //Barycentric coordinates (0,1-w,w)
-            return;
-        }
+            return vertex2 + (d4 - d3) / (d4 - d3 + (d5 - d6)) * (vertex3 - vertex2); //Barycentric coordinates (0,1-w,w)
 
         //P inside face region. Compute Q through its barycentric coordinates (u,v,w)
-        var denom = 1.0f / (va + vb + vc);
-        var v2 = vb * denom;
-        var w2 = vc * denom;
-        result = vertex1 + ab * v2 + ac * w2; //= u*vertex1 + v*vertex2 + w*vertex3, u = va * denom = 1.0f - v - w
+        return vertex1 + (ab * vb + ac * vc) / (va + vb + vc); //= u*vertex1 + v*vertex2 + w*vertex3, u = va * denom = 1.0f - v - w
     }
 
     public static void RecursiveDraw(Node node, int depth, bool permutation)
