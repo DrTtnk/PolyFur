@@ -225,9 +225,7 @@ public class KdTreeData
         }
 
         var closest = ClosestPointOnTriangleToPoint(
-            ref _vertices[_tris[currClosestTriangle]],
-            ref _vertices[_tris[currClosestTriangle + 1]],
-            ref _vertices[_tris[currClosestTriangle + 2]],
+            new TrisLib.Tris( _vertices[_tris[currClosestTriangle]], _vertices[_tris[currClosestTriangle + 1]], _vertices[_tris[currClosestTriangle + 2]]),
             ref to);
 
         closestPoint = transform.TransformPoint(closest);
@@ -248,7 +246,7 @@ public class KdTreeData
         _p2 = _vertices[_tris[triangle + 1]];
         _p3 = _vertices[_tris[triangle + 2]];
 
-        _nearest = ClosestPointOnTriangleToPoint(ref _p1, ref _p2, ref _p3, ref to);
+        _nearest = ClosestPointOnTriangleToPoint(new TrisLib.Tris(_p1, _p2, _p3), ref to);
 
         return Vector3.Magnitude(to - _nearest);
     }
@@ -469,52 +467,52 @@ public class KdTreeData
     }
 
     // Determines the closest point between a point and a triangle.
-    private static Vector3 ClosestPointOnTriangleToPoint(ref Vector3 vertex1, ref Vector3 vertex2, ref Vector3 vertex3, ref Vector3 point)
+    private static Vector3 ClosestPointOnTriangleToPoint(TrisLib.Tris tris, ref Vector3 point)
     {
         //Source: Real-Time Collision Detection by Christer Ericson
         //Reference: Page 136
 
         //Check if P in vertex region outside A
-        var ab = vertex2 - vertex1;
-        var ac = vertex3 - vertex1;
-        var ap = point - vertex1;
+        var ab = tris.p2 - tris.p1;
+        var ac = tris.p3 - tris.p1;
+        var ap = point - tris.p1;
 
         var d1 = Vector3.Dot(ab, ap);
         var d2 = Vector3.Dot(ac, ap);
         if (d1 <= 0.0f && d2 <= 0.0f)
-            return vertex1; //Barycentric coordinates (1,0,0)
+            return tris.p1; //Barycentric coordinates (1,0,0)
 
         //Check if P in vertex region outside B
-        var bp = point - vertex2;
+        var bp = point - tris.p2;
         var d3 = Vector3.Dot(ab, bp);
         var d4 = Vector3.Dot(ac, bp);
         if (d3 >= 0.0f && d4 <= d3)
-            return vertex2; // barycentric coordinates (0,1,0)
+            return tris.p2; // barycentric coordinates (0,1,0)
 
         //Check if P in edge region of AB, if so return projection of P onto AB
         var vc = d1 * d4 - d3 * d2;
         if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
-            return vertex1 + d1 / (d1 - d3) * ab; //Barycentric coordinates (1-v,v,0)
+            return tris.p1 + d1 / (d1 - d3) * ab; //Barycentric coordinates (1-v,v,0)
 
         //Check if P in vertex region outside C
-        var cp = point - vertex3;
+        var cp = point - tris.p3;
         var d5 = Vector3.Dot(ab, cp);
         var d6 = Vector3.Dot(ac, cp);
         if (d6 >= 0.0f && d5 <= d6)
-            return vertex3; //Barycentric coordinates (0,0,1)
+            return tris.p3; //Barycentric coordinates (0,0,1)
 
         //Check if P in edge region of AC, if so return projection of P onto AC
         var vb = d5 * d2 - d1 * d6;
         if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
-            return vertex1 + d2 / (d2 - d6) * ac; //Barycentric coordinates (1-w,0,w)
+            return tris.p1 + d2 / (d2 - d6) * ac; //Barycentric coordinates (1-w,0,w)
 
         //Check if P in edge region of BC, if so return projection of P onto BC
         var va = d3 * d6 - d5 * d4;
         if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f)
-            return vertex2 + (d4 - d3) / (d4 - d3 + (d5 - d6)) * (vertex3 - vertex2); //Barycentric coordinates (0,1-w,w)
+            return tris.p2 + (d4 - d3) / (d4 - d3 + (d5 - d6)) * (tris.p3 - tris.p2); //Barycentric coordinates (0,1-w,w)
 
         //P inside face region. Compute Q through its barycentric coordinates (u,v,w)
-        return vertex1 + (ab * vb + ac * vc) / (va + vb + vc); //= u*vertex1 + v*vertex2 + w*vertex3, u = va * denom = 1.0f - v - w
+        return tris.p1 + (ab * vb + ac * vc) / (va + vb + vc); //= u*vertex1 + v*vertex2 + w*vertex3, u = va * denom = 1.0f - v - w
     }
 
     public static void RecursiveDraw(Node node, int depth, bool permutation)
