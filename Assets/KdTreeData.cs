@@ -97,7 +97,11 @@ public class KdTreeData
             var mean = (a + b + c) / 3f;
             _triangleCentroid[i / 3] = mean;
 
-            _triangleRadius[i / 3] = Mathf.Max(Vector3.Distance(a, mean), Vector3.Distance(b, mean), Vector3.Distance(c, mean)) + float.Epsilon + 0.00000001f;
+            _triangleRadius[i / 3] = Mathf.Max(
+                Vector3.Distance(a, mean),
+                Vector3.Distance(b, mean),
+                Vector3.Distance(c, mean)
+            ) + float.Epsilon + 0.00000001f;
 
             _needToCheck[i / 3] = true;
         }
@@ -159,7 +163,7 @@ public class KdTreeData
                     //we are inside positive bound, we don't need to test for distance
                     _nodesToProcess.Push(node.positiveChild);
 
-                    if (Vector3.SqrMagnitude(node.negativeChild.tempClosestPoint - to) <= currentMin * currentMin && node.negativeChild.triangles != null && node.negativeChild.triangles.Length != 0)
+                    if (Vector3.SqrMagnitude(node.negativeChild.tempClosestPoint - to) <= currentMin * currentMin && node.negativeChild.triangles?.Length != 0)
                         _nodesToProcess.Push(node.negativeChild);
                 }
                 else //inside negative side, project on positive
@@ -169,7 +173,7 @@ public class KdTreeData
                     tempClosestPoint[partitionAxis] = partitionCoord;
                     node.positiveChild.tempClosestPoint = tempClosestPoint;
 
-                    if (Vector3.SqrMagnitude(node.positiveChild.tempClosestPoint - to) <= currentMin * currentMin && node.positiveChild.triangles != null && node.positiveChild.triangles.Length != 0)
+                    if (Vector3.SqrMagnitude(node.positiveChild.tempClosestPoint - to) <= currentMin * currentMin && node.positiveChild.triangles?.Length != 0)
 
                         _nodesToProcess.Push(node.positiveChild);
 
@@ -179,7 +183,6 @@ public class KdTreeData
             }
             else
             {
-                // preglejmo vse trikotnike, vzemimo najbližjega
                 foreach (var t in node.triangles)
                 {
                     checkCount++;
@@ -202,15 +205,6 @@ public class KdTreeData
                     {
                         // actual test
                         var newMin = ClosestDistanceOnTriangleSingle(newClosestTriangle, to);
-#if DEBUG_KD
-                        DebugDraw.DrawTriangle(
-                            transform.TransformPoint(vertices[tris[newClosestTriangle    ]]),
-                            transform.TransformPoint(vertices[tris[newClosestTriangle + 1]]),
-                            transform.TransformPoint(vertices[tris[newClosestTriangle + 2]]),
-                            Color.yellow
-                        );
-#endif
-                        // je ta trikotnik bližje?
                         if (newMin <= currentMin)
                         {
                             currentMin = newMin;
@@ -220,11 +214,6 @@ public class KdTreeData
                 }
             }
         }
-
-#if DEBUG_KD
-        Debug.Log("checkCount:" + checkCount);
-        Debug.Log("actualTrianglesTested:" + triangleToClearCount);
-#endif
         while (triangleToClearCount > 0)
         {
             triangleToClearCount--;
@@ -237,12 +226,6 @@ public class KdTreeData
             return false;
         }
 
-        /*foreach (bool b in needToCheck)
-        {
-            if (!b)
-                Debug.Log("GOTYOU");
-        }
-        */
         var closest = Vector3.zero;
 
         ClosestPointOnTriangleToPoint(
@@ -251,15 +234,6 @@ public class KdTreeData
             ref _vertices[_tris[currClosestTriangle + 2]],
             ref to,
             out closest);
-
-#if DEBUG_KD
-        DebugDraw.DrawTriangle(
-            transform.TransformPoint(vertices[tris[currClosestTriangle    ]]), 
-            transform.TransformPoint(vertices[tris[currClosestTriangle + 1]]), 
-            transform.TransformPoint(vertices[tris[currClosestTriangle + 2]]),
-            Color.red
-            );
-#endif
 
         closestPoint = transform.TransformPoint(closest);
 
@@ -295,35 +269,6 @@ public class KdTreeData
         var triangleIndex = triangle / 3;
 
         return Vector3.Distance(_triangleCentroid[triangleIndex], to) - _triangleRadius[triangleIndex];
-    }
-
-    private Vector3 ClosestPointOnTriangle(int[] triangles, Vector3 to)
-    {
-        var shortestDistance = float.MaxValue;
-
-        var shortestPoint = Vector3.zero;
-
-        // Iterate through all triangles
-        foreach (var triangle in triangles)
-        {
-            var p1 = _vertices[_tris[triangle + 0]];
-            var p2 = _vertices[_tris[triangle + 1]];
-            var p3 = _vertices[_tris[triangle + 2]];
-
-            Vector3 nearest;
-
-            ClosestPointOnTriangleToPoint(ref p1, ref p2, ref p3, ref to, out nearest);
-
-            var distance = (to - nearest).sqrMagnitude;
-
-            if (distance <= shortestDistance)
-            {
-                shortestDistance = distance;
-                shortestPoint = nearest;
-            }
-        }
-
-        return shortestPoint;
     }
 
     private void BuildTriangleTree()
