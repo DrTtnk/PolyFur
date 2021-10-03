@@ -202,7 +202,8 @@ public class KdTreeData
                     if (MinDistanceToTriangleApprox(t, to) <= currentMin)
                     {
                         // actual test
-                        var newMin = ClosestDistanceOnTriangleSingle(t, to);
+                        var trs = new TrisLib.Tris(_vertices[_tris[t]], _vertices[_tris[t + 1]], _vertices[_tris[t + 2]]);
+                        var newMin = ClosestDistanceOnTriangleSingle(trs, to);
                         if (newMin <= currentMin)
                         {
                             currentMin = newMin;
@@ -235,21 +236,7 @@ public class KdTreeData
     }
 
     // temp
-    private Vector3 _p1;
-    private Vector3 _p2;
-    private Vector3 _p3;
-    private Vector3 _nearest;
-
-    private float ClosestDistanceOnTriangleSingle(int triangle, Vector3 to)
-    {
-        _p1 = _vertices[_tris[triangle]];
-        _p2 = _vertices[_tris[triangle + 1]];
-        _p3 = _vertices[_tris[triangle + 2]];
-
-        _nearest = ClosestPointOnTriangleToPoint(new TrisLib.Tris(_p1, _p2, _p3), ref to);
-
-        return Vector3.Magnitude(to - _nearest);
-    }
+    private static float ClosestDistanceOnTriangleSingle(TrisLib.Tris triangle, Vector3 to) => Vector3.Magnitude(to - ClosestPointOnTriangleToPoint(triangle, ref to));
 
     /// <summary>
     /// Can be negative in weird cases, still you need to check
